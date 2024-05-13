@@ -3,6 +3,7 @@ package cron
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -165,6 +166,95 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
+	}
+}
+
+func TestRunTight(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+	var occupied atomic.Bool
+	cron := New()
+	cron.tight = true
+	// expected schedule
+	// 0s: schedule 1 task
+	// 1s: skip no task
+	// 1.1s: start 2 task
+	// 2s: skip no task
+	// 2.2s: 3 task
+	// 3s: skip no task
+	// 3.3s: 4 task
+	// 4s: skip no task
+	// 4.4s: finished all
+	s := time.Now()
+	cron.Schedule(Every(1*time.Second), FuncJob(func() {
+		start := time.Now()
+		if occupied.Load() {
+			return
+		}
+		occupied.Store(true)
+		defer func() {
+			occupied.Store(false)
+		}()
+		time.Sleep(1100 * time.Millisecond)
+		t.Logf("exec %v", time.Now().Sub(start))
+		wg.Done()
+	}), "test18")
+	cron.Start()
+	defer cron.Stop()
+	select {
+	case <-time.After(6 * ONE_SECOND):
+		t.FailNow()
+	case <-wait(wg):
+		if time.Now().Sub(s) < 4400*time.Millisecond {
+			t.Errorf("time %v", time.Now().Sub(s))
+		}
+	}
+}
+
+func TestRunNoTight(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+	var occupied atomic.Bool
+	cron := New()
+	cron.tight = false
+	// expected schedule
+	// 0s: schedule 1 task
+	// 1s: skip no task
+	// 2s: start 2 task
+	// 3s: skip no task
+	// 4s: 1 task finished, 3 task
+	// 3s: skip no task
+	// 6s: 1 task finished, 4 task
+	// 7s: skip no task
+	// 7.1s: finished all
+	skipTimes := 0
+	s := time.Now()
+	cron.Schedule(Every(1*time.Second), FuncJob(func() {
+		start := time.Now()
+		if occupied.Load() {
+			skipTimes++
+			return
+		}
+		occupied.Store(true)
+		defer func() {
+			occupied.Store(false)
+		}()
+		time.Sleep(1100 * time.Millisecond)
+		t.Logf("exec %v", time.Now().Sub(start))
+		wg.Done()
+	}), "test18")
+	cron.Start()
+	defer cron.Stop()
+	select {
+	case <-time.After(9 * ONE_SECOND):
+		t.FailNow()
+	case <-wait(wg):
+		if time.Now().Sub(s) < 7*time.Second {
+			t.Errorf("time %v", time.Now().Sub(s))
+		}
+		if skipTimes != 4 {
+			t.Errorf("skipTimes %v", skipTimes)
+		}
 	}
 }
 
