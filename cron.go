@@ -101,6 +101,14 @@ func New() *Cron {
 	}
 }
 
+func (c *Cron) SetTight(tight bool) {
+	c.tight = tight
+}
+
+func (c *Cron) IsTight() bool {
+	return c.tight
+}
+
 // A wrapper that turns a func() into a cron.Job
 type FuncJob func()
 
