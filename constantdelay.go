@@ -12,8 +12,8 @@ type ConstantDelaySchedule struct {
 // Delays of less than a second are not supported (will panic).
 // Any fields less than a Second are truncated.
 func Every(duration time.Duration) ConstantDelaySchedule {
-	if duration < time.Second {
-		panic("cron/constantdelay: delays of less than a second are not supported: " +
+	if duration < 500*time.Millisecond {
+		panic("cron/constantdelay: delays of less than 500ms are not supported: " +
 			duration.String())
 	}
 	return ConstantDelaySchedule{
