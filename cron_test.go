@@ -171,7 +171,7 @@ func TestRunningMultipleSchedules(t *testing.T) {
 
 func TestRunEveryMs(t *testing.T) {
 	wg := &sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(3)
 	var occupied atomic.Bool
 
 	cron := New()
@@ -180,6 +180,9 @@ func TestRunEveryMs(t *testing.T) {
 	// 0s: schedule 1 task
 	// 500ms: skip no task
 	// 600ms: start 2 task
+	// 1000ms: skip no task
+	// 1100ms: 3 task
+	// 1500ms: skip no task
 	s := time.Now()
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		start := time.Now()
@@ -201,7 +204,8 @@ func TestRunEveryMs(t *testing.T) {
 	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
-		if time.Now().Sub(s) < 1200*time.Millisecond {
+		t.Log(time.Now().Sub(s))
+		if time.Now().Sub(s) < 1800*time.Millisecond {
 			t.Errorf("time %v", time.Now().Sub(s))
 		}
 	}
