@@ -56,7 +56,8 @@ func getField(field string, r bounds) uint64 {
 }
 
 // getRange returns the bits indicated by the given expression:
-//   number | number "-" number [ "/" number ]
+//
+//	number | number "-" number [ "/" number ]
 func getRange(expr string, r bounds) uint64 {
 
 	var (
@@ -213,11 +214,26 @@ func parseDescriptor(spec string) Schedule {
 	if strings.HasPrefix(spec, every) {
 		duration, err := time.ParseDuration(spec[len(every):])
 		if err != nil {
-			log.Panicf("Failed to parse duration %s: %s", spec, err)
+			duration, err = parseDurationWithMillis(spec[len(every):])
+			if err != nil {
+				log.Panicf("Failed to parse duration %s: %s", spec, err)
+			}
 		}
 		return Every(duration)
 	}
 
 	log.Panicf("Unrecognized descriptor: %s", spec)
 	return nil
+}
+
+// parseDurationWithMillis try to parse a duration string with milliseconds.
+func parseDurationWithMillis(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "ms") {
+		ms, err := strconv.Atoi(s[:len(s)-2])
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(ms) * time.Millisecond, nil
+	}
+	return time.ParseDuration(s)
 }
