@@ -16,6 +16,11 @@ func Every(duration time.Duration) ConstantDelaySchedule {
 		panic("cron/constantdelay: delays of less than 500ms are not supported: " +
 			duration.String())
 	}
+	if duration < 1*time.Second {
+		return ConstantDelaySchedule{
+			Delay: duration,
+		}
+	}
 	return ConstantDelaySchedule{
 		Delay: duration - time.Duration(duration.Nanoseconds())%time.Second,
 	}
@@ -24,5 +29,5 @@ func Every(duration time.Duration) ConstantDelaySchedule {
 // Next returns the next time this should be run.
 // This rounds so that the next activation time will be on the second.
 func (schedule ConstantDelaySchedule) Next(t time.Time) time.Time {
-	return t.Add(schedule.Delay - time.Duration(t.Nanosecond())*time.Nanosecond)
+	return t.Add(schedule.Delay)
 }

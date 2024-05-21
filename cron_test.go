@@ -169,6 +169,41 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	}
 }
 
+func TestRunEverMsWithOneMs(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	wg.Add(3)
+	var occupied atomic.Bool
+
+	cron := New()
+	cron.tight = true
+	s := time.Now()
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		start := time.Now()
+		if occupied.Load() {
+			return
+		}
+		occupied.Store(true)
+		defer func() {
+			occupied.Store(false)
+		}()
+		time.Sleep(100 * time.Millisecond)
+		t.Logf("exec %v", time.Now().Sub(start))
+		wg.Done()
+	}), "test20")
+	cron.Start()
+	defer cron.Stop()
+
+	select {
+	case <-time.After(2 * ONE_SECOND):
+		t.FailNow()
+	case <-wait(wg):
+		t.Log(time.Now().Sub(s))
+		if time.Now().Sub(s) < 1500*time.Millisecond {
+			t.Errorf("time %v", time.Now().Sub(s))
+		}
+	}
+}
+
 func TestRunEveryMs(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(3)
@@ -196,12 +231,12 @@ func TestRunEveryMs(t *testing.T) {
 		time.Sleep(600 * time.Millisecond)
 		t.Logf("exec %v", time.Now().Sub(start))
 		wg.Done()
-	}), "test18")
+	}), "test19")
 	cron.Start()
 	defer cron.Stop()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 		t.Log(time.Now().Sub(s))
@@ -247,6 +282,7 @@ func TestRunTight(t *testing.T) {
 	case <-time.After(6 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
+		t.Log(time.Now().Sub(s))
 		if time.Now().Sub(s) < 4400*time.Millisecond {
 			t.Errorf("time %v", time.Now().Sub(s))
 		}
