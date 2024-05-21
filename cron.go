@@ -242,7 +242,6 @@ func (c *Cron) run() {
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(effective)
 				go c.execute(e)
-
 			}
 			continue
 
