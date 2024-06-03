@@ -8,6 +8,7 @@ import (
 // traditional crontab specification. It is computed initially and stored as bit sets.
 type SpecSchedule struct {
 	Second, Minute, Hour, Dom, Month, Dow uint64
+	TimeZone                              *time.Location
 }
 
 // bounds provides a range of acceptable values (plus a map of name to value).
@@ -64,6 +65,15 @@ func (s *SpecSchedule) Next(t time.Time) time.Time {
 	// values)
 
 	// Start at the earliest possible time (the upcoming second).
+	var localTz *time.Location = t.Location()
+	// use the schedule's timezone if it's set
+	// return to the local timezone when done
+	if s.TimeZone != nil {
+		t = t.In(s.TimeZone)
+		defer func() {
+			t = t.In(localTz)
+		}()
+	}
 	t = t.Add(1*time.Second - time.Duration(t.Nanosecond())*time.Nanosecond)
 
 	// This flag indicates whether a field has been incremented.

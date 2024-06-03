@@ -33,7 +33,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	cron := New()
 	cron.Start()
 	cron.Stop()
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test1")
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test1", nil)
 
 	select {
 	case <-time.After(ONE_SECOND):
@@ -49,7 +49,7 @@ func TestAddBeforeRunning(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test2")
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test2", nil)
 	cron.Start()
 	defer cron.Stop()
 
@@ -69,7 +69,7 @@ func TestAddWhileRunning(t *testing.T) {
 	cron := New()
 	cron.Start()
 	defer cron.Stop()
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test3")
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test3", nil)
 
 	select {
 	case <-time.After(ONE_SECOND):
@@ -84,7 +84,7 @@ func TestSnapshotEntries(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.AddFunc("@every 2s", func() { wg.Done() }, "test4")
+	cron.AddFunc("@every 2s", func() { wg.Done() }, "test4", nil)
 	cron.Start()
 	defer cron.Stop()
 
@@ -112,10 +112,10 @@ func TestMultipleEntries(t *testing.T) {
 	wg.Add(2)
 
 	cron := New()
-	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test5")
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test6")
-	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test7")
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test8")
+	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test5", nil)
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test6", nil)
+	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test7", nil)
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test8", nil)
 
 	cron.Start()
 	defer cron.Stop()
@@ -133,9 +133,9 @@ func TestRunningJobTwice(t *testing.T) {
 	wg.Add(2)
 
 	cron := New()
-	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test9")
-	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test10")
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test11")
+	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test9", nil)
+	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test10", nil)
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test11", nil)
 
 	cron.Start()
 	defer cron.Stop()
@@ -152,9 +152,9 @@ func TestRunningMultipleSchedules(t *testing.T) {
 	wg.Add(2)
 
 	cron := New()
-	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test12")
-	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test13")
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test14")
+	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test12", nil)
+	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test13", nil)
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test14", nil)
 	cron.Schedule(Every(time.Minute), FuncJob(func() {}), "test15")
 	cron.Schedule(Every(time.Second), FuncJob(func() { wg.Done() }), "test16")
 	cron.Schedule(Every(time.Hour), FuncJob(func() {}), "test17")
@@ -346,7 +346,7 @@ func TestLocalTimezone(t *testing.T) {
 		now.Second()+1, now.Minute(), now.Hour(), now.Day(), now.Month())
 
 	cron := New()
-	cron.AddFunc(spec, func() { wg.Done() }, "test18")
+	cron.AddFunc(spec, func() { wg.Done() }, "test18", nil)
 	cron.Start()
 	defer cron.Stop()
 
@@ -372,10 +372,10 @@ func TestJob(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.AddJob("0 0 0 30 Feb ?", testJob{wg, "job0"}, "test19")
-	cron.AddJob("0 0 0 1 1 ?", testJob{wg, "job1"}, "test20")
-	cron.AddJob("* * * * * ?", testJob{wg, "job2"}, "test21")
-	cron.AddJob("1 0 0 1 1 ?", testJob{wg, "job3"}, "test22")
+	cron.AddJob("0 0 0 30 Feb ?", testJob{wg, "job0"}, "test19", nil)
+	cron.AddJob("0 0 0 1 1 ?", testJob{wg, "job1"}, "test20", nil)
+	cron.AddJob("* * * * * ?", testJob{wg, "job2"}, "test21", nil)
+	cron.AddJob("1 0 0 1 1 ?", testJob{wg, "job3"}, "test22", nil)
 	cron.Schedule(Every(5*time.Second+5*time.Nanosecond), testJob{wg, "job4"}, "test23")
 	cron.Schedule(Every(5*time.Minute), testJob{wg, "job5"}, "test24")
 
@@ -410,7 +410,7 @@ func TestAddBeforeRunningThenRemoveWhileRunning(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test25")
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test25", nil)
 	cron.Start()
 	defer cron.Stop()
 	cron.RemoveJob("test25")
@@ -429,7 +429,7 @@ func TestAddBeforeRunningThenRemoveBeforeRunning(t *testing.T) {
 	wg.Add(1)
 
 	cron := New()
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test26")
+	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test26", nil)
 	cron.RemoveJob("test26")
 	cron.Start()
 	defer cron.Stop()

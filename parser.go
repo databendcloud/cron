@@ -14,7 +14,7 @@ import (
 // It accepts
 //   - Full crontab specs, e.g. "* * * * * ?"
 //   - Descriptors, e.g. "@midnight", "@every 1h30m"
-func Parse(spec string) Schedule {
+func Parse(spec string, timezone *time.Location) Schedule {
 	if spec[0] == '@' {
 		return parseDescriptor(spec)
 	}
@@ -30,14 +30,14 @@ func Parse(spec string) Schedule {
 	if len(fields) == 5 {
 		fields = append(fields, "*")
 	}
-
 	schedule := &SpecSchedule{
-		Second: getField(fields[0], seconds),
-		Minute: getField(fields[1], minutes),
-		Hour:   getField(fields[2], hours),
-		Dom:    getField(fields[3], dom),
-		Month:  getField(fields[4], months),
-		Dow:    getField(fields[5], dow),
+		Second:   getField(fields[0], seconds),
+		Minute:   getField(fields[1], minutes),
+		Hour:     getField(fields[2], hours),
+		Dom:      getField(fields[3], dom),
+		Month:    getField(fields[4], months),
+		Dow:      getField(fields[5], dow),
+		TimeZone: timezone,
 	}
 
 	return schedule

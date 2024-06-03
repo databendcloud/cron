@@ -115,13 +115,13 @@ type FuncJob func()
 func (f FuncJob) Run() { f() }
 
 // AddFunc adds a func to the Cron to be run on the given schedule.
-func (c *Cron) AddFunc(spec string, cmd func(), name string) {
-	c.AddJob(spec, FuncJob(cmd), name)
+func (c *Cron) AddFunc(spec string, cmd func(), name string, tz *time.Location) {
+	c.AddJob(spec, FuncJob(cmd), name, tz)
 }
 
 // AddFunc adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) AddJob(spec string, cmd Job, name string) {
-	c.Schedule(Parse(spec), cmd, name)
+func (c *Cron) AddJob(spec string, cmd Job, name string, tz *time.Location) {
+	c.Schedule(Parse(spec, tz), cmd, name)
 }
 
 // RemoveJob removes a Job from the Cron based on name.

@@ -56,7 +56,7 @@ func TestActivation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		actual := Parse(test.spec).Next(getTime(test.time).Add(-1 * time.Second))
+		actual := Parse(test.spec, nil).Next(getTime(test.time).Add(-1 * time.Second))
 		expected := getTime(test.time)
 		if test.expected && expected != actual || !test.expected && expected == actual {
 			t.Errorf("Fail evaluating %s on %s: (expected) %s != %s (actual)",
@@ -117,12 +117,44 @@ func TestNext(t *testing.T) {
 	}
 
 	for _, c := range runs {
-		actual := Parse(c.spec).Next(getTime(c.time))
+		actual := Parse(c.spec, nil).Next(getTime(c.time))
 		expected := getTime(c.expected)
 		if !actual.Equal(expected) {
 			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
 		}
 	}
+}
+
+func TestNextWithTZ(t *testing.T) {
+	runs := []struct {
+		time, spec string
+		expected   string
+		originalTZ string
+		targetTZ   string
+	}{
+		// Simple cases
+		{"Mon Jul 9 14:45 2012", "0 0/15 * * *", "Mon Jul 9 15:00 2012", "Asia/Shanghai", "America/New_York"},
+		{"Tue Jul 12 14:59 2012", "0 0 17 * * 5", "Fri Jul 13 17:00 2012", "Asia/Shanghai", "Asia/Shanghai"},
+		{"Tue Jul 12 14:59 2012", "0 0 17 * * 5", "Sat Jul 14 05:00 2012", "Asia/Shanghai", "America/New_York"},
+		// every 17:00 at nyc
+		{"Tue Jul 12 14:59 2012", "0 0 17 * * *", "Wed Jul 13 05:00 2012", "Asia/Shanghai", "America/New_York"},
+		{"Tue Jul 12 14:59 2012", "0 0 17 * * *", "Tue Jul 12 21:00 2012", "UTC", "America/New_York"},
+	}
+
+	for _, c := range runs {
+		oz, _ := time.LoadLocation(c.originalTZ)
+		tz, _ := time.LoadLocation(c.targetTZ)
+		ot := asLocalTime(getTime(c.time), oz)
+		actual := Parse(c.spec, tz).Next(ot)
+		expected := asLocalTime(getTime(c.expected), oz)
+		if !actual.Equal(expected) {
+			t.Errorf("%s, \"%s\": (expected) %v != %v (actual)", c.time, c.spec, expected, actual)
+		}
+	}
+}
+
+func asLocalTime(utcTime time.Time, loc *time.Location) time.Time {
+	return time.Date(utcTime.Year(), utcTime.Month(), utcTime.Day(), utcTime.Hour(), utcTime.Minute(), utcTime.Second(), utcTime.Nanosecond(), loc)
 }
 
 func getTime(value string) time.Time {
