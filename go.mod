@@ -1,3 +1,3 @@
-module github.com/zhihanz/cron
+module github.com/databendcloud/cron
 
 go 1.21.1
