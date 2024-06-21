@@ -2,7 +2,7 @@ name: Release
 on:
   push:
     paths:
-      - '.github/workflows/release.yaml'
+      - '.github/workflow/release.yaml'
 
 jobs:
   release:
