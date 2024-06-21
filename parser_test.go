@@ -101,12 +101,12 @@ func TestSpecSchedule(t *testing.T) {
 		expr     string
 		expected Schedule
 	}{
-		{"* 5 * * * *", &SpecSchedule{all(seconds), 1 << 5, all(hours), all(dom), all(months), all(dow)}},
+		{"* 5 * * * *", &SpecSchedule{all(seconds), 1 << 5, all(hours), all(dom), all(months), all(dow), nil}},
 		{"@every 5m", ConstantDelaySchedule{time.Duration(5) * time.Minute}},
 	}
 
 	for _, c := range entries {
-		actual := Parse(c.expr)
+		actual := Parse(c.expr, nil)
 		if !reflect.DeepEqual(actual, c.expected) {
 			t.Errorf("%s => (expected) %b != %b (actual)", c.expr, c.expected, actual)
 		}

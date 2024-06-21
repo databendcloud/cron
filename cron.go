@@ -3,6 +3,7 @@
 package cron
 
 import (
+	"github.com/sirupsen/logrus"
 	"sort"
 	"time"
 )
@@ -115,13 +116,13 @@ type FuncJob func()
 func (f FuncJob) Run() { f() }
 
 // AddFunc adds a func to the Cron to be run on the given schedule.
-func (c *Cron) AddFunc(spec string, cmd func(), name string) {
-	c.AddJob(spec, FuncJob(cmd), name)
+func (c *Cron) AddFunc(spec string, cmd func(), name string, tz *time.Location) {
+	c.AddJob(spec, FuncJob(cmd), name, tz)
 }
 
 // AddFunc adds a Job to the Cron to be run on the given schedule.
-func (c *Cron) AddJob(spec string, cmd Job, name string) {
-	c.Schedule(Parse(spec), cmd, name)
+func (c *Cron) AddJob(spec string, cmd Job, name string, tz *time.Location) {
+	c.Schedule(Parse(spec, tz), cmd, name)
 }
 
 // RemoveJob removes a Job from the Cron based on name.
@@ -231,8 +232,12 @@ func (c *Cron) run() {
 				e := runEarlyEntry.CurrentEntry
 				e.Prev = runEarlyEntry.EndTime
 				e.Next = e.Schedule.Next(runEarlyEntry.EndTime)
+				logrus.WithField("name", runEarlyEntry.CurrentEntry.Name).WithField("prev", runEarlyEntry.CurrentEntry.Prev).WithField("next", runEarlyEntry.CurrentEntry.Next).Infof("Start Run early entry")
 				go c.execute(e)
+				logrus.WithField("name", runEarlyEntry.CurrentEntry.Name).WithField("prev", runEarlyEntry.CurrentEntry.Prev).WithField("next", runEarlyEntry.CurrentEntry.Next).Infof("End Run early entry")
+
 			}
+			continue
 		case now = <-time.After(effective.Sub(now)):
 			// Run every entry whose next time was this effective time.
 			for _, e := range c.entries {
@@ -241,7 +246,9 @@ func (c *Cron) run() {
 				}
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(effective)
+				logrus.WithField("name", e.Name).WithField("prev", e.Prev).WithField("next", e.Next).Infof("Start Run entry")
 				go c.execute(e)
+				logrus.WithField("name", e.Name).WithField("prev", e.Prev).WithField("next", e.Next).Infof("End Run entry")
 			}
 			continue
 
@@ -267,6 +274,8 @@ func (c *Cron) run() {
 
 		case <-c.stop:
 			return
+		default:
+			// avoid bloc
 		}
 
 		// 'now' should be updated after newEntry and snapshot cases.
