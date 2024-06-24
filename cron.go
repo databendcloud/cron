@@ -268,7 +268,8 @@ func (c *Cron) run() {
 
 		case <-c.stop:
 			return
-		default:
+
+		case <-time.After(time.Second):
 			// avoid block
 		}
 
