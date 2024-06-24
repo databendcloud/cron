@@ -274,8 +274,6 @@ func (c *Cron) run() {
 
 		case <-c.stop:
 			return
-		default:
-			// avoid block
 		}
 
 		// 'now' should be updated after newEntry and snapshot cases.
