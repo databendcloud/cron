@@ -5,8 +5,6 @@ package cron
 import (
 	"sort"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type entries []*Entry
@@ -233,9 +231,7 @@ func (c *Cron) run() {
 				e := runEarlyEntry.CurrentEntry
 				e.Prev = runEarlyEntry.EndTime
 				e.Next = e.Schedule.Next(runEarlyEntry.EndTime)
-				logrus.WithField("module", "cron").WithField("name", runEarlyEntry.CurrentEntry.Name).WithField("prev", runEarlyEntry.CurrentEntry.Prev).WithField("next", runEarlyEntry.CurrentEntry.Next).Infof("Start Run early entry")
 				go c.execute(e)
-				logrus.WithField("module", "cron").WithField("name", runEarlyEntry.CurrentEntry.Name).WithField("prev", runEarlyEntry.CurrentEntry.Prev).WithField("next", runEarlyEntry.CurrentEntry.Next).Infof("End Run early entry")
 			}
 			continue
 		case now = <-time.After(effective.Sub(now)):
@@ -246,9 +242,7 @@ func (c *Cron) run() {
 				}
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(effective)
-				logrus.WithField("module", "cron").WithField("name", e.Name).WithField("prev", e.Prev).WithField("next", e.Next).Infof("Start Run entry")
 				go c.execute(e)
-				logrus.WithField("module", "cron").WithField("name", e.Name).WithField("prev", e.Prev).WithField("next", e.Next).Infof("End Run entry")
 			}
 			continue
 
