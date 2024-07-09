@@ -23,8 +23,8 @@ type Cron struct {
 	// Enable tight execution of jobs.
 	// If this is true and the previous job execution time is greater than the schedule time,
 	// then the next job will start immediately.
-	tight    bool
-	runEntry chan RunEntry
+	tight       bool
+	continueRun chan *Entry
 }
 
 // Job is an interface for submitted cron jobs.
@@ -37,15 +37,6 @@ type Schedule interface {
 	// Return the next activation time, later than the given time.
 	// Next is invoked initially, and then each time the job is run.
 	Next(time.Time) time.Time
-}
-
-type RunEntry struct {
-	CurrentEntry *Entry
-	EndTime      time.Time
-}
-
-func (e RunEntry) RunEarly() bool {
-	return e.EndTime.After(e.CurrentEntry.Next)
 }
 
 // Entry consists of a schedule and the func to execute on that schedule.
@@ -90,14 +81,14 @@ func (s byTime) Less(i, j int) bool {
 // New returns a new Cron job runner.
 func New() *Cron {
 	return &Cron{
-		entries:  nil,
-		add:      make(chan *Entry),
-		remove:   make(chan string),
-		stop:     make(chan struct{}),
-		snapshot: make(chan entries),
-		runEntry: make(chan RunEntry),
-		running:  false,
-		tight:    true,
+		entries:     nil,
+		add:         make(chan *Entry),
+		remove:      make(chan string),
+		stop:        make(chan struct{}),
+		snapshot:    make(chan entries),
+		continueRun: make(chan *Entry),
+		running:     false,
+		tight:       true,
 	}
 }
 
@@ -185,24 +176,6 @@ func (c *Cron) Start() {
 	go c.run()
 }
 
-// Run every entry whose next time was this effective time.
-func (c *Cron) execute(e *Entry) {
-	start := time.Now().Local()
-	e.Job.Run()
-	if c.tight {
-
-		end := time.Now().Local()
-		elapsed := end.Sub(start)
-		runEntry := RunEntry{
-			CurrentEntry: e,
-			EndTime:      e.Prev.Add(elapsed),
-		}
-		if runEntry.RunEarly() {
-			c.runEntry <- runEntry
-		}
-	}
-}
-
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run() {
@@ -224,26 +197,29 @@ func (c *Cron) run() {
 		} else {
 			effective = c.entries[0].Next
 		}
+		now := time.Now().Local()
 
 		select {
-		case runEarlyEntry := <-c.runEntry:
-			if c.tight && runEarlyEntry.RunEarly() {
-				e := runEarlyEntry.CurrentEntry
-				e.Prev = runEarlyEntry.EndTime
-				e.Next = e.Schedule.Next(runEarlyEntry.EndTime)
-				go c.execute(e)
-			}
-			continue
-		case now = <-time.After(effective.Sub(now)):
-			// Run every entry whose next time was this effective time.
+		case <-time.After(effective.Sub(now)):
+			// Run every entry whose next time was less than effective time.
 			for _, e := range c.entries {
-				if e.Next != effective {
+				if e.Next.After(effective) {
 					break
 				}
 				e.Prev = e.Next
-				e.Next = e.Schedule.Next(effective)
-				go c.execute(e)
+				e.Next = e.Schedule.Next(time.Now().Local())
+				go func(e *Entry, next time.Time) {
+					e.Job.Run()
+					if c.tight && time.Now().Local().After(next) {
+						c.continueRun <- e
+					}
+				}(e, e.Next)
 			}
+			continue
+
+		case e := <-c.continueRun:
+			e.Prev = e.Next
+			e.Next = time.Now().Local()
 			continue
 
 		case newEntry := <-c.add:
@@ -272,9 +248,6 @@ func (c *Cron) run() {
 		case <-time.After(time.Second):
 			// avoid block
 		}
-
-		// 'now' should be updated after newEntry and snapshot cases.
-		now = time.Now().Local()
 	}
 }
 

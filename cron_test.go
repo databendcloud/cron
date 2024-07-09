@@ -2,10 +2,13 @@ package cron
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/test-go/testify/assert"
 )
 
 // Many tests schedule a job for every second, and then wait at most a second
@@ -202,88 +205,113 @@ func TestRunEverMsWithOneMs(t *testing.T) {
 }
 
 func TestRunEveryMs(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	wg.Add(3)
-	var occupied atomic.Bool
-
+	timesc := make(chan time.Time, 5)
 	cron := New()
-	cron.tight = true
-	// expected schedule
-	// 0s: schedule 1 task
-	// 500ms: skip no task
-	// 600ms: start 2 task
-	// 1000ms: skip no task
-	// 1100ms: 3 task
-	// 1500ms: skip no task
-	s := time.Now()
+	cron.tight = false
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
-		start := time.Now()
-		if occupied.Load() {
-			return
-		}
-		occupied.Store(true)
-		defer func() {
-			occupied.Store(false)
-		}()
-		time.Sleep(600 * time.Millisecond)
-		t.Logf("exec %v", time.Since(start))
-		wg.Done()
+		time.Sleep(500 * time.Millisecond)
+		timesc <- time.Now()
 	}), "test19")
 	cron.Start()
 	defer cron.Stop()
 
-	select {
-	case <-time.After(3 * ONE_SECOND):
-		t.FailNow()
-	case <-wait(wg):
-		t.Log(time.Since(s))
-		if time.Since(s) < 1800*time.Millisecond {
-			t.Errorf("time %v", time.Since(s))
-		}
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		log.Printf("exec %v", t)
+		times = append(times, t)
 	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+500, 2)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+500, 2)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+500, 2)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+500, 2)
 }
 
 func TestRunTight(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	wg.Add(4)
-	var occupied atomic.Bool
+	timesc := make(chan time.Time, 5)
 	cron := New()
 	cron.tight = true
-	// expected schedule
-	// 0s: schedule 1 task
-	// 1s: skip no task
-	// 1.1s: start 2 task
-	// 2s: skip no task
-	// 2.2s: 3 task
-	// 3s: skip no task
-	// 3.3s: 4 task
-	// 4s: skip no task
-	// 4.4s: finished all
-	s := time.Now()
-	cron.Schedule(Every(1*time.Second), FuncJob(func() {
-		start := time.Now()
-		if occupied.Load() {
-			return
-		}
-		occupied.Store(true)
-		defer func() {
-			occupied.Store(false)
-		}()
-		time.Sleep(1100 * time.Millisecond)
-		t.Logf("exec %v", time.Since(start))
-		wg.Done()
-	}), "test18")
+	cron.Schedule(Every(1000*time.Millisecond), FuncJob(func() {
+		time.Sleep(900 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test20")
 	cron.Start()
 	defer cron.Stop()
-	select {
-	case <-time.After(6 * ONE_SECOND):
-		t.FailNow()
-	case <-wait(wg):
-		t.Log(time.Since(s))
-		if time.Since(s) < 4400*time.Millisecond {
-			t.Errorf("time %v", time.Since(s))
-		}
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		log.Printf("exec %v", t)
+		times = append(times, t)
 	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 1)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1000, 1)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1000, 1)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 1)
+}
+
+func TestRunNoTight2(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	running := atomic.Bool{}
+	cron := New()
+	cron.tight = false
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		if running.Load() {
+			return
+		}
+		running.Store(true)
+		defer running.Store(false)
+
+		time.Sleep(1100 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test20")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		times = append(times, t)
+		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 1)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1500, 1)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+3000, 1)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+4500, 1)
+}
+
+func TestRunTight2(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	running := atomic.Bool{}
+	cron := New()
+	cron.tight = true
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		if running.Load() {
+			return
+		}
+		running.Store(true)
+		defer running.Store(false)
+
+		time.Sleep(1100 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test20")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		times = append(times, t)
+		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1100, 5)
 }
 
 func TestRunNoTight(t *testing.T) {
