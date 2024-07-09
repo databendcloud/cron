@@ -207,24 +207,24 @@ func (c *Cron) run() {
 				}
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(time.Now().Local())
-				go func(e *Entry) {
+				go func(e *Entry, next time.Time) {
 					e.Job.Run()
-					if c.tight && time.Now().Local().After(e.Next) {
+					if c.tight && time.Now().Local().After(next) {
 						c.continueRun <- e
 					}
-				}(e)
+				}(e, e.Next)
 			}
 			continue
 
 		case e := <-c.continueRun:
 			e.Prev = e.Next
 			e.Next = e.Schedule.Next(time.Now().Local())
-			go func(e *Entry) {
+			go func(e *Entry, next time.Time) {
 				e.Job.Run()
-				if c.tight && time.Now().Local().After(e.Next) {
+				if c.tight && time.Now().Local().After(next) {
 					c.continueRun <- e
 				}
-			}(e)
+			}(e, e.Next)
 			continue
 
 		case newEntry := <-c.add:

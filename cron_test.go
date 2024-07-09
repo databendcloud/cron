@@ -270,7 +270,7 @@ func TestRunTight(t *testing.T) {
 			occupied.Store(false)
 		}()
 		time.Sleep(1100 * time.Millisecond)
-		t.Logf("exec %v", time.Since(start))
+		t.Logf("exec %v %v", time.Now(), time.Since(start))
 		wg.Done()
 	}), "test18")
 	cron.Start()
