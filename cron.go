@@ -206,7 +206,7 @@ func (c *Cron) run() {
 					break
 				}
 				e.Prev = e.Next
-				e.Next = e.Schedule.Next(effective)
+				e.Next = e.Schedule.Next(time.Now().Local())
 				go func(e *Entry) {
 					e.Job.Run()
 					if c.tight && time.Now().Local().After(e.Next) {
