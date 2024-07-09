@@ -200,9 +200,9 @@ func (c *Cron) run() {
 
 		select {
 		case now = <-time.After(effective.Sub(now)):
-			// Run every entry whose next time was this effective time.
+			// Run every entry whose next time was less than effective time.
 			for _, e := range c.entries {
-				if e.Next != effective {
+				if e.Next.After(effective) {
 					break
 				}
 				e.Prev = e.Next
