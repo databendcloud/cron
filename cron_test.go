@@ -252,6 +252,68 @@ func TestRunTight(t *testing.T) {
 	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 1)
 }
 
+func TestRunNoTight2(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	running := atomic.Bool{}
+	cron := New()
+	cron.tight = false
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		if running.Load() {
+			return
+		}
+		running.Store(true)
+		defer running.Store(false)
+
+		time.Sleep(1100 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test20")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		times = append(times, t)
+		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 1)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1500, 1)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+3000, 1)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+4500, 1)
+}
+
+func TestRunTight2(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	running := atomic.Bool{}
+	cron := New()
+	cron.tight = true
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		if running.Load() {
+			return
+		}
+		running.Store(true)
+		defer running.Store(false)
+
+		time.Sleep(1100 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test20")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		times = append(times, t)
+		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1100, 5)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1100, 5)
+}
+
 func TestRunNoTight(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(4)
