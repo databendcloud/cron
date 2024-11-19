@@ -175,7 +175,6 @@ func TestRunEverMsWithOneMs(t *testing.T) {
 	var occupied atomic.Bool
 
 	cron := New()
-	cron.tight = true
 	s := time.Now()
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		start := time.Now()
@@ -207,7 +206,6 @@ func TestRunEverMsWithOneMs(t *testing.T) {
 func TestRunEveryMs(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
-	cron.tight = false
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		time.Sleep(500 * time.Millisecond)
 		timesc <- time.Now()
@@ -231,7 +229,6 @@ func TestRunEveryMs(t *testing.T) {
 func TestRunTight(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
-	cron.tight = true
 	cron.Schedule(Every(1000*time.Millisecond), FuncJob(func() {
 		time.Sleep(900 * time.Millisecond)
 		timesc <- time.Now()
@@ -256,7 +253,6 @@ func TestRunNoTight2(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	running := atomic.Bool{}
 	cron := New()
-	cron.tight = false
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		if running.Load() {
 			return
@@ -287,7 +283,6 @@ func TestRunTight2(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	running := atomic.Bool{}
 	cron := New()
-	cron.tight = true
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		if running.Load() {
 			return
@@ -319,7 +314,6 @@ func TestRunNoTight(t *testing.T) {
 	wg.Add(4)
 	var occupied atomic.Bool
 	cron := New()
-	cron.tight = false
 	// expected schedule
 	// 0s: schedule 1 task
 	// 1s: skip no task

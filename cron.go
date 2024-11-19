@@ -23,12 +23,6 @@ type Cron struct {
 	work        chan func()
 	maxWorkers  int
 	runningJobs atomic.Int64
-
-	// Enable tight execution of jobs.
-	// If this is true and the previous job execution time is greater than the schedule time,
-	// then the next job will start immediately.
-	tight       bool
-	continueRun chan *Entry
 }
 
 // Job is an interface for submitted cron jobs.
@@ -86,12 +80,6 @@ func WithMaxWorkers(maxWorkers int) Option {
 	}
 }
 
-func WithTight(tight bool) Option {
-	return func(c *Cron) {
-		c.tight = tight
-	}
-}
-
 // New returns a new Cron job runner.
 func New(opts ...Option) *Cron {
 	c := &Cron{
@@ -100,12 +88,10 @@ func New(opts ...Option) *Cron {
 		remove:      make(chan string),
 		stop:        make(chan struct{}),
 		snapshot:    make(chan entries),
-		continueRun: make(chan *Entry),
 		work:        make(chan func(), 2048),
 		running:     false,
 		maxWorkers:  256,
 		runningJobs: atomic.Int64{},
-		tight:       true,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -129,10 +115,6 @@ func (c *Cron) worker() {
 		w()
 		c.runningJobs.Add(-1)
 	}
-}
-
-func (c *Cron) IsTight() bool {
-	return c.tight
 }
 
 func (c *Cron) QueuingJobs() int {
@@ -252,18 +234,9 @@ func (c *Cron) run() {
 				e.Next = e.Schedule.Next(time.Now().Local())
 				c.work <- func() {
 					e := e
-					func() {
-						e.Job.Run()
-						if c.tight && time.Now().Local().After(e.Next) {
-							c.continueRun <- e
-						}
-					}()
+					e.Job.Run()
 				}
 			}
-			continue
-
-		case e := <-c.continueRun:
-			e.Next = time.Now().Local()
 			continue
 
 		case newEntry := <-c.add:
