@@ -206,7 +206,7 @@ func TestRunEveryMsWithSleepOnBoundary(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(501 * time.Millisecond)
 		timesc <- time.Now()
 	}), "test19")
 	cron.Start()
