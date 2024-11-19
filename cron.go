@@ -105,6 +105,7 @@ func New(opts ...Option) *Cron {
 		continueRun: make(chan *Entry),
 		work:        make(chan *Entry),
 		running:     false,
+		maxWorkers:  128,
 		tight:       true,
 	}
 	for _, opt := range opts {
