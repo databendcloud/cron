@@ -255,9 +255,10 @@ func (c *Cron) step() bool {
 
 	select {
 	case <-time.After(effective.Sub(now)):
-		// Run every entry whose next time was less than effective time.
+		// reload entries, since the entries might be changed during the wait.
 		entries := c.sortEntries()
 		for _, e := range entries {
+			// run every entry whose next time was less than effective time.
 			if e.NextScheduleTime.After(effective) {
 				return true
 			}
