@@ -202,6 +202,29 @@ func TestRunEveryMs(t *testing.T) {
 	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+500, 2)
 }
 
+func TestRunEveryMsWithSleepOnBoundary(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	cron := New()
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		time.Sleep(500 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test19")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		log.Printf("exec %v", t)
+		times = append(times, t)
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 2)
+}
+
 func TestRunTight(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
