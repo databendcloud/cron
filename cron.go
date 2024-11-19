@@ -4,6 +4,7 @@ package cron
 
 import (
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -16,13 +17,11 @@ type entries []*Entry
 type Cron struct {
 	entries     entries
 	stop        chan struct{}
-	add         chan *Entry
-	remove      chan string
-	snapshot    chan entries
 	running     bool
 	work        chan func()
 	maxWorkers  int
 	runningJobs atomic.Int64
+	mu          sync.Mutex
 }
 
 // Job is an interface for submitted cron jobs.
@@ -84,10 +83,8 @@ func WithMaxWorkers(maxWorkers int) Option {
 func New(opts ...Option) *Cron {
 	c := &Cron{
 		entries:     nil,
-		add:         make(chan *Entry),
-		remove:      make(chan string),
 		stop:        make(chan struct{}),
-		snapshot:    make(chan entries),
+		mu:          sync.Mutex{},
 		work:        make(chan func(), 2048),
 		running:     false,
 		maxWorkers:  256,
@@ -138,18 +135,16 @@ func (c *Cron) AddJob(spec string, cmd Job, name string, tz *time.Location) {
 
 // RemoveJob removes a Job from the Cron based on name.
 func (c *Cron) RemoveJob(name string) {
-	if !c.running {
-		i := c.entries.pos(name)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-		if i == -1 {
-			return
-		}
+	i := c.entries.pos(name)
 
-		c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
+	if i == -1 {
 		return
 	}
 
-	c.remove <- name
+	c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
 }
 
 func (entrySlice entries) pos(name string) int {
@@ -163,32 +158,38 @@ func (entrySlice entries) pos(name string) int {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
-	entry := &Entry{
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	newEntry := &Entry{
 		Schedule: schedule,
 		Job:      cmd,
 		Name:     name,
 	}
 
-	if !c.running {
-		i := c.entries.pos(entry.Name)
-		if i != -1 {
-			return
-		}
-		c.entries = append(c.entries, entry)
+	i := c.entries.pos(newEntry.Name)
+	if i != -1 {
 		return
 	}
-
-	c.add <- entry
+	c.entries = append(c.entries, newEntry)
+	newEntry.Next = newEntry.Schedule.Next(time.Now().Local())
 }
 
 // Entries returns a snapshot of the cron entries.
-func (c *Cron) Entries() []*Entry {
-	if c.running {
-		c.snapshot <- nil
-		x := <-c.snapshot
-		return x
+func (c *Cron) Entries() []Entry {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	entries := []Entry{}
+	for _, e := range c.entries {
+		entries = append(entries, Entry{
+			Schedule: e.Schedule,
+			Next:     e.Next,
+			Job:      e.Job,
+			Name:     e.Name,
+		})
 	}
-	return c.entrySnapshot()
+	return entries
 }
 
 // Start the cron scheduler in its own go-routine.
@@ -240,26 +241,6 @@ func (c *Cron) run() {
 			}
 			continue
 
-		case newEntry := <-c.add:
-			i := c.entries.pos(newEntry.Name)
-			if i != -1 {
-				break
-			}
-			c.entries = append(c.entries, newEntry)
-			newEntry.Next = newEntry.Schedule.Next(time.Now().Local())
-
-		case name := <-c.remove:
-			i := c.entries.pos(name)
-
-			if i == -1 {
-				break
-			}
-
-			c.entries = c.entries[:i+copy(c.entries[i:], c.entries[i+1:])]
-
-		case <-c.snapshot:
-			c.snapshot <- c.entrySnapshot()
-
 		case <-c.stop:
 			return
 
@@ -277,18 +258,4 @@ func (c *Cron) Stop() {
 
 	close(c.stop)
 	c.running = false
-}
-
-// entrySnapshot returns a deep copy of the current cron entry list.
-func (c *Cron) entrySnapshot() []*Entry {
-	entries := []*Entry{}
-	for _, e := range c.entries {
-		entries = append(entries, &Entry{
-			Schedule: e.Schedule,
-			Next:     e.Next,
-			Job:      e.Job,
-			Name:     e.Name,
-		})
-	}
-	return entries
 }
