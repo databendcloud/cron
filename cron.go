@@ -103,7 +103,7 @@ func New(opts ...Option) *Cron {
 		continueRun: make(chan *Entry),
 		work:        make(chan func(), 2048),
 		running:     false,
-		maxWorkers:  128,
+		maxWorkers:  256,
 		runningJobs: atomic.Int64{},
 		tight:       true,
 	}
