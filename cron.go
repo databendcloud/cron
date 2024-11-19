@@ -97,23 +97,19 @@ func New(opts ...Option) *Cron {
 		opt(c)
 	}
 
-	// Start worker pool
-	for i := 0; i < c.maxWorkers; i++ {
-		go c.worker()
-	}
 	return c
 }
 
 func (c *Cron) worker() {
 	for {
-		if !c.running {
+		select {
+		case w := <-c.work:
+			c.runningJobs.Add(1)
+			w()
+			c.runningJobs.Add(-1)
+		case <-c.stop:
 			return
 		}
-
-		w := <-c.work
-		c.runningJobs.Add(1)
-		w()
-		c.runningJobs.Add(-1)
 	}
 }
 
@@ -197,7 +193,15 @@ func (c *Cron) Entries() []*Entry {
 
 // Start the cron scheduler in its own go-routine.
 func (c *Cron) Start() {
+	if c.running {
+		return
+	}
 	c.running = true
+
+	// Start worker pool
+	for i := 0; i < c.maxWorkers; i++ {
+		go c.worker()
+	}
 	go c.run()
 }
 
@@ -232,10 +236,7 @@ func (c *Cron) run() {
 					break
 				}
 				e.Next = e.Schedule.Next(time.Now().Local())
-				c.work <- func() {
-					e := e
-					e.Job.Run()
-				}
+				c.work <- e.Job.Run
 			}
 			continue
 
@@ -270,7 +271,11 @@ func (c *Cron) run() {
 
 // Stop the cron scheduler.
 func (c *Cron) Stop() {
-	c.stop <- struct{}{}
+	if !c.running {
+		return
+	}
+
+	close(c.stop)
 	c.running = false
 }
 
