@@ -19,7 +19,7 @@ type Cron struct {
 	remove     chan string
 	snapshot   chan entries
 	running    bool
-	work       chan *Entry
+	work       chan func()
 	maxWorkers int
 
 	// Enable tight execution of jobs.
@@ -49,10 +49,6 @@ type Entry struct {
 	// The next time the job will run. This is the zero time if Cron has not been
 	// started or this entry's schedule is unsatisfiable
 	Next time.Time
-
-	// The last time this job was run. This is the zero time if the job has never
-	// been run.
-	Prev time.Time
 
 	// The Job to run.
 	Job Job
@@ -103,7 +99,7 @@ func New(opts ...Option) *Cron {
 		stop:        make(chan struct{}),
 		snapshot:    make(chan entries),
 		continueRun: make(chan *Entry),
-		work:        make(chan *Entry),
+		work:        make(chan func()),
 		running:     false,
 		maxWorkers:  128,
 		tight:       true,
@@ -120,8 +116,13 @@ func New(opts ...Option) *Cron {
 }
 
 func (c *Cron) worker() {
-	for e := range c.work {
-		e.Job.Run()
+	for {
+		if !c.running {
+			return
+		}
+
+		w := <-c.work
+		w()
 	}
 }
 
@@ -235,19 +236,20 @@ func (c *Cron) run() {
 				if e.Next.After(effective) {
 					break
 				}
-				e.Prev = e.Next
 				e.Next = e.Schedule.Next(time.Now().Local())
-				go func(e *Entry, next time.Time) {
-					e.Job.Run()
-					if c.tight && time.Now().Local().After(next) {
-						c.continueRun <- e
-					}
-				}(e, e.Next)
+				c.work <- func() {
+					e := e
+					func() {
+						e.Job.Run()
+						if c.tight && time.Now().Local().After(e.Next) {
+							c.continueRun <- e
+						}
+					}()
+				}
 			}
 			continue
 
 		case e := <-c.continueRun:
-			e.Prev = e.Next
 			e.Next = time.Now().Local()
 			continue
 
@@ -293,7 +295,6 @@ func (c *Cron) entrySnapshot() []*Entry {
 		entries = append(entries, &Entry{
 			Schedule: e.Schedule,
 			Next:     e.Next,
-			Prev:     e.Prev,
 			Job:      e.Job,
 			Name:     e.Name,
 		})
