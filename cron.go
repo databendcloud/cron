@@ -18,10 +18,15 @@ type Cron struct {
 	entries     entries
 	stop        chan struct{}
 	running     bool
-	work        chan func()
+	work        chan workEntry
 	maxWorkers  int
 	runningJobs atomic.Int64
 	mu          sync.Mutex
+}
+
+type workEntry struct {
+	f    func()
+	name string
 }
 
 // Job is an interface for submitted cron jobs.
@@ -85,7 +90,7 @@ func New(opts ...Option) *Cron {
 		entries:     nil,
 		stop:        make(chan struct{}),
 		mu:          sync.Mutex{},
-		work:        make(chan func(), 2048),
+		work:        make(chan workEntry, 2048),
 		running:     false,
 		maxWorkers:  256,
 		runningJobs: atomic.Int64{},
@@ -102,7 +107,7 @@ func (c *Cron) worker() {
 		select {
 		case w := <-c.work:
 			c.runningJobs.Add(1)
-			w()
+			w.f()
 			c.runningJobs.Add(-1)
 		case <-c.stop:
 			return
@@ -237,7 +242,10 @@ func (c *Cron) run() {
 					break
 				}
 				e.Next = e.Schedule.Next(time.Now().Local())
-				c.work <- e.Job.Run
+				c.work <- workEntry{
+					f:    e.Job.Run,
+					name: e.Name,
+				}
 			}
 			continue
 
