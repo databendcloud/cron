@@ -14,15 +14,15 @@ type entries []*Entry
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries       entries
-	stop          chan struct{}
-	add           chan *Entry
-	remove        chan string
-	snapshot      chan entries
-	running       bool
-	work          chan func()
-	maxWorkers    int
-	activeWorkers atomic.Int64
+	entries     entries
+	stop        chan struct{}
+	add         chan *Entry
+	remove      chan string
+	snapshot    chan entries
+	running     bool
+	work        chan func()
+	maxWorkers  int
+	runningJobs atomic.Int64
 
 	// Enable tight execution of jobs.
 	// If this is true and the previous job execution time is greater than the schedule time,
@@ -95,17 +95,17 @@ func WithTight(tight bool) Option {
 // New returns a new Cron job runner.
 func New(opts ...Option) *Cron {
 	c := &Cron{
-		entries:       nil,
-		add:           make(chan *Entry),
-		remove:        make(chan string),
-		stop:          make(chan struct{}),
-		snapshot:      make(chan entries),
-		continueRun:   make(chan *Entry),
-		work:          make(chan func()),
-		running:       false,
-		maxWorkers:    128,
-		activeWorkers: atomic.Int64{},
-		tight:         true,
+		entries:     nil,
+		add:         make(chan *Entry),
+		remove:      make(chan string),
+		stop:        make(chan struct{}),
+		snapshot:    make(chan entries),
+		continueRun: make(chan *Entry),
+		work:        make(chan func()),
+		running:     false,
+		maxWorkers:  128,
+		runningJobs: atomic.Int64{},
+		tight:       true,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -125,9 +125,9 @@ func (c *Cron) worker() {
 		}
 
 		w := <-c.work
-		c.activeWorkers.Add(1)
+		c.runningJobs.Add(1)
 		w()
-		c.activeWorkers.Add(-1)
+		c.runningJobs.Add(-1)
 	}
 }
 
@@ -135,8 +135,8 @@ func (c *Cron) IsTight() bool {
 	return c.tight
 }
 
-func (c *Cron) ActiveWorkers() int {
-	return int(c.activeWorkers.Load())
+func (c *Cron) RunningJobs() int {
+	return int(c.runningJobs.Load())
 }
 
 // FuncJob A wrapper that turns a func() into a cron.Job
