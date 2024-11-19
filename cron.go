@@ -88,6 +88,12 @@ func WithMaxWorkers(maxWorkers int) Option {
 	}
 }
 
+func WithTight(tight bool) Option {
+	return func(c *Cron) {
+		c.tight = tight
+	}
+}
+
 // New returns a new Cron job runner.
 func New(opts ...Option) *Cron {
 	c := &Cron{
@@ -116,10 +122,6 @@ func (c *Cron) worker() {
 	for e := range c.work {
 		e.Job.Run()
 	}
-}
-
-func (c *Cron) SetTight(tight bool) {
-	c.tight = tight
 }
 
 func (c *Cron) IsTight() bool {
