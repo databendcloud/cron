@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 type entries []*Entry
@@ -15,13 +17,14 @@ type entries []*Entry
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries     entries
-	stop        chan struct{}
-	running     bool
-	work        chan workEntry
-	maxWorkers  int
-	runningJobs atomic.Int64
-	mu          sync.Mutex
+	entries      entries
+	stop         chan struct{}
+	running      bool
+	work         chan workEntry
+	maxWorkers   int
+	runningJobs  atomic.Int64
+	mu           sync.Mutex
+	singleFlight singleflight.Group
 }
 
 type workEntry struct {
@@ -87,13 +90,14 @@ func WithMaxWorkers(maxWorkers int) Option {
 // New returns a new Cron job runner.
 func New(opts ...Option) *Cron {
 	c := &Cron{
-		entries:     nil,
-		stop:        make(chan struct{}),
-		mu:          sync.Mutex{},
-		work:        make(chan workEntry, 2048),
-		running:     false,
-		maxWorkers:  256,
-		runningJobs: atomic.Int64{},
+		entries:      nil,
+		stop:         make(chan struct{}),
+		mu:           sync.Mutex{},
+		work:         make(chan workEntry, 2048),
+		running:      false,
+		maxWorkers:   256,
+		runningJobs:  atomic.Int64{},
+		singleFlight: singleflight.Group{},
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -106,9 +110,14 @@ func (c *Cron) worker() {
 	for {
 		select {
 		case w := <-c.work:
-			c.runningJobs.Add(1)
-			w.f()
-			c.runningJobs.Add(-1)
+			// avoid each job being executed multiple times at the same time. DoChan() will discard
+			// duplicate calls, so we don't need to check if the job is already running.
+			c.singleFlight.DoChan(w.name, func() (interface{}, error) {
+				c.runningJobs.Add(1)
+				defer c.runningJobs.Add(-1)
+				w.f()
+				return nil, nil
+			})
 		case <-c.stop:
 			return
 		}
@@ -199,6 +208,9 @@ func (c *Cron) Entries() []Entry {
 
 // Start the cron scheduler in its own go-routine.
 func (c *Cron) Start() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.running {
 		return
 	}
@@ -211,55 +223,70 @@ func (c *Cron) Start() {
 	go c.run()
 }
 
+func (c *Cron) step() bool {
+	// Determine the next entry to run.
+	c.mu.Lock()
+	sort.Sort(byTime(c.entries))
+
+	var effective time.Time
+	if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
+		// If there are no entries yet, just sleep - it still handles new entries
+		// and stop requests.
+		effective = time.Now().Local().AddDate(10, 0, 0)
+	} else {
+		effective = c.entries[0].Next
+	}
+	now := time.Now().Local()
+	c.mu.Unlock()
+
+	select {
+	case <-time.After(effective.Sub(now)):
+		// Run every entry whose next time was less than effective time.
+		c.mu.Lock()
+		for _, e := range c.entries {
+			if e.Next.After(effective) {
+				c.mu.Unlock()
+				return true
+			}
+			e.Next = e.Schedule.Next(time.Now().Local())
+			c.work <- workEntry{
+				f:    e.Job.Run,
+				name: e.Name,
+			}
+		}
+		c.mu.Unlock()
+		return true
+
+	case <-c.stop:
+		return false
+
+	case <-time.After(time.Second):
+		// avoid block
+		return true
+	}
+
+}
+
 // Run the scheduler.. this is private just due to the need to synchronize
 // access to the 'running' state variable.
 func (c *Cron) run() {
 	// Figure out the next activation times for each entry.
+	c.mu.Lock()
 	now := time.Now().Local()
 	for _, entry := range c.entries {
 		entry.Next = entry.Schedule.Next(now)
 	}
+	c.mu.Unlock()
 
-	for {
-		// Determine the next entry to run.
-		sort.Sort(byTime(c.entries))
-
-		var effective time.Time
-		if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
-			// If there are no entries yet, just sleep - it still handles new entries
-			// and stop requests.
-			effective = now.AddDate(10, 0, 0)
-		} else {
-			effective = c.entries[0].Next
-		}
-		now := time.Now().Local()
-
-		select {
-		case <-time.After(effective.Sub(now)):
-			// Run every entry whose next time was less than effective time.
-			for _, e := range c.entries {
-				if e.Next.After(effective) {
-					break
-				}
-				e.Next = e.Schedule.Next(time.Now().Local())
-				c.work <- workEntry{
-					f:    e.Job.Run,
-					name: e.Name,
-				}
-			}
-			continue
-
-		case <-c.stop:
-			return
-
-		case <-time.After(time.Second):
-			// avoid block
-		}
+	for c.step() {
 	}
 }
 
 // Stop the cron scheduler.
 func (c *Cron) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if !c.running {
 		return
 	}
