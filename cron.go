@@ -101,7 +101,7 @@ func New(opts ...Option) *Cron {
 		stop:        make(chan struct{}),
 		snapshot:    make(chan entries),
 		continueRun: make(chan *Entry),
-		work:        make(chan func()),
+		work:        make(chan func(), 2048),
 		running:     false,
 		maxWorkers:  128,
 		runningJobs: atomic.Int64{},
@@ -133,6 +133,10 @@ func (c *Cron) worker() {
 
 func (c *Cron) IsTight() bool {
 	return c.tight
+}
+
+func (c *Cron) QueuingJobs() int {
+	return len(c.work)
 }
 
 func (c *Cron) RunningJobs() int {
