@@ -191,19 +191,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
 
 // Entries returns a snapshot of the cron entries.
 func (c *Cron) Entries() []Entry {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	entries := []Entry{}
-	for _, e := range c.entries {
-		entries = append(entries, Entry{
-			Schedule:         e.Schedule,
-			NextScheduleTime: e.NextScheduleTime,
-			Job:              e.Job,
-			Name:             e.Name,
-		})
-	}
-	return entries
+	return c.sortEntries()
 }
 
 // Start the cron scheduler in its own go-routine.
@@ -228,7 +216,17 @@ func (c *Cron) sortEntries() []Entry {
 	defer c.mu.Unlock()
 
 	sort.Sort(byTime(c.entries))
-	return c.Entries()
+
+	entries := []Entry{}
+	for _, e := range c.entries {
+		entries = append(entries, Entry{
+			Schedule:         e.Schedule,
+			NextScheduleTime: e.NextScheduleTime,
+			Job:              e.Job,
+			Name:             e.Name,
+		})
+	}
+	return entries
 }
 
 func (c *Cron) bounceNextScheduleTime(name string) {
@@ -244,9 +242,8 @@ func (c *Cron) bounceNextScheduleTime(name string) {
 
 func (c *Cron) step() bool {
 	// Determine the next entry to run.
-	entries := c.sortEntries()
-
 	var effective time.Time
+	entries := c.sortEntries()
 	if len(entries) == 0 || entries[0].NextScheduleTime.IsZero() {
 		// If there are no entries yet, just sleep - it still handles new entries
 		// and stop requests.
@@ -259,6 +256,7 @@ func (c *Cron) step() bool {
 	select {
 	case <-time.After(effective.Sub(now)):
 		// Run every entry whose next time was less than effective time.
+		entries := c.sortEntries()
 		for _, e := range entries {
 			if e.NextScheduleTime.After(effective) {
 				return true
