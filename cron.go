@@ -51,7 +51,7 @@ type Entry struct {
 
 	// The next time the job will run. This is the zero time if Cron has not been
 	// started or this entry's schedule is unsatisfiable
-	Next time.Time
+	NextScheduleTime time.Time
 
 	// The Job to run.
 	Job Job
@@ -70,13 +70,13 @@ func (s byTime) Less(i, j int) bool {
 	// Two zero times should return false.
 	// Otherwise, zero is "greater" than any other time.
 	// (To sort it at the end of the list.)
-	if s[i].Next.IsZero() {
+	if s[i].NextScheduleTime.IsZero() {
 		return false
 	}
-	if s[j].Next.IsZero() {
+	if s[j].NextScheduleTime.IsZero() {
 		return true
 	}
-	return s[i].Next.Before(s[j].Next)
+	return s[i].NextScheduleTime.Before(s[j].NextScheduleTime)
 }
 
 type Option func(*Cron)
@@ -186,7 +186,7 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, name string) {
 		return
 	}
 	c.entries = append(c.entries, newEntry)
-	newEntry.Next = newEntry.Schedule.Next(time.Now().Local())
+	newEntry.NextScheduleTime = newEntry.Schedule.Next(time.Now().Local())
 }
 
 // Entries returns a snapshot of the cron entries.
@@ -197,10 +197,10 @@ func (c *Cron) Entries() []Entry {
 	entries := []Entry{}
 	for _, e := range c.entries {
 		entries = append(entries, Entry{
-			Schedule: e.Schedule,
-			Next:     e.Next,
-			Job:      e.Job,
-			Name:     e.Name,
+			Schedule:         e.Schedule,
+			NextScheduleTime: e.NextScheduleTime,
+			Job:              e.Job,
+			Name:             e.Name,
 		})
 	}
 	return entries
@@ -223,38 +223,52 @@ func (c *Cron) Start() {
 	go c.run()
 }
 
+func (c *Cron) sortEntries() []Entry {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	sort.Sort(byTime(c.entries))
+	return c.Entries()
+}
+
+func (c *Cron) bounceNextScheduleTime(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for i := range c.entries {
+		if c.entries[i].Name == name {
+			c.entries[i].NextScheduleTime = c.entries[i].Schedule.Next(time.Now().Local())
+		}
+	}
+}
+
 func (c *Cron) step() bool {
 	// Determine the next entry to run.
-	c.mu.Lock()
-	sort.Sort(byTime(c.entries))
+	entries := c.sortEntries()
 
 	var effective time.Time
-	if len(c.entries) == 0 || c.entries[0].Next.IsZero() {
+	if len(entries) == 0 || entries[0].NextScheduleTime.IsZero() {
 		// If there are no entries yet, just sleep - it still handles new entries
 		// and stop requests.
 		effective = time.Now().Local().AddDate(10, 0, 0)
 	} else {
-		effective = c.entries[0].Next
+		effective = entries[0].NextScheduleTime
 	}
 	now := time.Now().Local()
-	c.mu.Unlock()
 
 	select {
 	case <-time.After(effective.Sub(now)):
 		// Run every entry whose next time was less than effective time.
-		c.mu.Lock()
-		for _, e := range c.entries {
-			if e.Next.After(effective) {
-				c.mu.Unlock()
+		for _, e := range entries {
+			if e.NextScheduleTime.After(effective) {
 				return true
 			}
-			e.Next = e.Schedule.Next(time.Now().Local())
+			c.bounceNextScheduleTime(e.Name)
 			c.work <- workEntry{
 				f:    e.Job.Run,
 				name: e.Name,
 			}
 		}
-		c.mu.Unlock()
 		return true
 
 	case <-c.stop:
@@ -271,12 +285,9 @@ func (c *Cron) step() bool {
 // access to the 'running' state variable.
 func (c *Cron) run() {
 	// Figure out the next activation times for each entry.
-	c.mu.Lock()
-	now := time.Now().Local()
-	for _, entry := range c.entries {
-		entry.Next = entry.Schedule.Next(now)
+	for _, entry := range c.Entries() {
+		c.bounceNextScheduleTime(entry.Name)
 	}
-	c.mu.Unlock()
 
 	for c.step() {
 	}
