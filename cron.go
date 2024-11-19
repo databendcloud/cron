@@ -13,12 +13,14 @@ type entries []*Entry
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
-	entries  entries
-	stop     chan struct{}
-	add      chan *Entry
-	remove   chan string
-	snapshot chan entries
-	running  bool
+	entries    entries
+	stop       chan struct{}
+	add        chan *Entry
+	remove     chan string
+	snapshot   chan entries
+	running    bool
+	work       chan *Entry
+	maxWorkers int
 
 	// Enable tight execution of jobs.
 	// If this is true and the previous job execution time is greater than the schedule time,
@@ -78,17 +80,41 @@ func (s byTime) Less(i, j int) bool {
 	return s[i].Next.Before(s[j].Next)
 }
 
+type Option func(*Cron)
+
+func WithMaxWorkers(maxWorkers int) Option {
+	return func(c *Cron) {
+		c.maxWorkers = maxWorkers
+	}
+}
+
 // New returns a new Cron job runner.
-func New() *Cron {
-	return &Cron{
+func New(opts ...Option) *Cron {
+	c := &Cron{
 		entries:     nil,
 		add:         make(chan *Entry),
 		remove:      make(chan string),
 		stop:        make(chan struct{}),
 		snapshot:    make(chan entries),
 		continueRun: make(chan *Entry),
+		work:        make(chan *Entry),
 		running:     false,
 		tight:       true,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+
+	// Start worker pool
+	for i := 0; i < c.maxWorkers; i++ {
+		go c.worker()
+	}
+	return c
+}
+
+func (c *Cron) worker() {
+	for e := range c.work {
+		e.Job.Run()
 	}
 }
 
