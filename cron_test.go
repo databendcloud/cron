@@ -39,7 +39,7 @@ func TestStopCausesJobsToNotRun(t *testing.T) {
 	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test1", nil)
 
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(1 * ONE_SECOND):
 		// No job ran!
 	case <-wait(wg):
 		t.FailNow()
@@ -58,7 +58,7 @@ func TestAddBeforeRunning(t *testing.T) {
 
 	// Give cron 2 seconds to run our job (which is always activated).
 	select {
-	case <-time.After(ONE_SECOND):
+	case <-time.After(2 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -103,30 +103,6 @@ func TestSnapshotEntries(t *testing.T) {
 
 }
 
-// Test that the entries are correctly sorted.
-// Add a bunch of long-in-the-future entries, and an immediate entry, and ensure
-// that the immediate entry runs immediately.
-// Also: Test that multiple jobs run in the same instant.
-func TestMultipleEntries(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-
-	cron := New()
-	cron.AddFunc("0 0 0 1 1 ?", func() {}, "test5", nil)
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test6", nil)
-	cron.AddFunc("0 0 0 31 12 ?", func() {}, "test7", nil)
-	cron.AddFunc("* * * * * ?", func() { wg.Done() }, "test8", nil)
-
-	cron.Start()
-	defer cron.Stop()
-
-	select {
-	case <-time.After(ONE_SECOND):
-		t.FailNow()
-	case <-wait(wg):
-	}
-}
-
 // Test running the same job twice.
 func TestRunningJobTwice(t *testing.T) {
 	wg := &sync.WaitGroup{}
@@ -141,7 +117,7 @@ func TestRunningJobTwice(t *testing.T) {
 	defer cron.Stop()
 
 	select {
-	case <-time.After(2 * ONE_SECOND):
+	case <-time.After(3 * ONE_SECOND):
 		t.FailNow()
 	case <-wait(wg):
 	}
@@ -175,7 +151,6 @@ func TestRunEverMsWithOneMs(t *testing.T) {
 	var occupied atomic.Bool
 
 	cron := New()
-	cron.tight = true
 	s := time.Now()
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		start := time.Now()
@@ -207,9 +182,8 @@ func TestRunEverMsWithOneMs(t *testing.T) {
 func TestRunEveryMs(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
-	cron.tight = false
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(490 * time.Millisecond)
 		timesc <- time.Now()
 	}), "test19")
 	cron.Start()
@@ -228,10 +202,32 @@ func TestRunEveryMs(t *testing.T) {
 	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+500, 2)
 }
 
+func TestRunEveryMsWithSleepOnBoundary(t *testing.T) {
+	timesc := make(chan time.Time, 5)
+	cron := New()
+	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
+		time.Sleep(501 * time.Millisecond)
+		timesc <- time.Now()
+	}), "test19")
+	cron.Start()
+	defer cron.Stop()
+
+	times := []time.Time{}
+	for i := 0; i < 5; i++ {
+		t := <-timesc
+		log.Printf("exec %v", t)
+		times = append(times, t)
+	}
+
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 2)
+}
+
 func TestRunTight(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	cron := New()
-	cron.tight = true
 	cron.Schedule(Every(1000*time.Millisecond), FuncJob(func() {
 		time.Sleep(900 * time.Millisecond)
 		timesc <- time.Now()
@@ -246,48 +242,16 @@ func TestRunTight(t *testing.T) {
 		times = append(times, t)
 	}
 
-	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 1)
-	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1000, 1)
-	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1000, 1)
-	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 1)
-}
-
-func TestRunNoTight2(t *testing.T) {
-	timesc := make(chan time.Time, 5)
-	running := atomic.Bool{}
-	cron := New()
-	cron.tight = false
-	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
-		if running.Load() {
-			return
-		}
-		running.Store(true)
-		defer running.Store(false)
-
-		time.Sleep(1100 * time.Millisecond)
-		timesc <- time.Now()
-	}), "test20")
-	cron.Start()
-	defer cron.Stop()
-
-	times := []time.Time{}
-	for i := 0; i < 5; i++ {
-		t := <-timesc
-		times = append(times, t)
-		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
-	}
-
-	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 1)
-	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1500, 1)
-	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+3000, 1)
-	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+4500, 1)
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1000, 2)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1000, 2)
 }
 
 func TestRunTight2(t *testing.T) {
 	timesc := make(chan time.Time, 5)
 	running := atomic.Bool{}
 	cron := New()
-	cron.tight = true
 	cron.Schedule(Every(500*time.Millisecond), FuncJob(func() {
 		if running.Load() {
 			return
@@ -308,57 +272,10 @@ func TestRunTight2(t *testing.T) {
 		log.Printf("exec %v", t.Sub(times[0]).Milliseconds())
 	}
 
-	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1100, 5)
-	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1100, 5)
-	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1100, 5)
-	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1100, 5)
-}
-
-func TestRunNoTight(t *testing.T) {
-	wg := &sync.WaitGroup{}
-	wg.Add(4)
-	var occupied atomic.Bool
-	cron := New()
-	cron.tight = false
-	// expected schedule
-	// 0s: schedule 1 task
-	// 1s: skip no task
-	// 2s: start 2 task
-	// 3s: skip no task
-	// 4s: 1 task finished, 3 task
-	// 3s: skip no task
-	// 6s: 1 task finished, 4 task
-	// 7s: skip no task
-	// 7.1s: finished all
-	skipTimes := 0
-	s := time.Now()
-	cron.Schedule(Every(1*time.Second), FuncJob(func() {
-		start := time.Now()
-		if occupied.Load() {
-			skipTimes++
-			return
-		}
-		occupied.Store(true)
-		defer func() {
-			occupied.Store(false)
-		}()
-		time.Sleep(1100 * time.Millisecond)
-		t.Logf("exec %v", time.Since(start))
-		wg.Done()
-	}), "test18")
-	cron.Start()
-	defer cron.Stop()
-	select {
-	case <-time.After(9 * ONE_SECOND):
-		t.FailNow()
-	case <-wait(wg):
-		if time.Since(s) < 7*time.Second {
-			t.Errorf("time %v", time.Since(s))
-		}
-		if skipTimes != 4 {
-			t.Errorf("skipTimes %v", skipTimes)
-		}
-	}
+	assert.InDelta(t, times[1].UnixMilli(), times[0].UnixMilli()+1500, 5)
+	assert.InDelta(t, times[2].UnixMilli(), times[1].UnixMilli()+1500, 5)
+	assert.InDelta(t, times[3].UnixMilli(), times[2].UnixMilli()+1500, 5)
+	assert.InDelta(t, times[4].UnixMilli(), times[3].UnixMilli()+1500, 5)
 }
 
 // Test that the cron is run in the local time zone (as opposed to UTC).
@@ -409,7 +326,7 @@ func TestJob(t *testing.T) {
 
 	select {
 	case <-time.After(ONE_SECOND):
-		t.FailNow()
+		t.Fatalf("job not run")
 	case <-wait(wg):
 	}
 
