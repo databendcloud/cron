@@ -245,9 +245,8 @@ func (c *Cron) step() bool {
 	var effective time.Time
 	entries := c.sortEntries()
 	if len(entries) == 0 || entries[0].NextScheduleTime.IsZero() {
-		// If there are no entries yet, just sleep - it still handles new entries
-		// and stop requests.
-		effective = time.Now().Local().AddDate(10, 0, 0)
+		// If there are no entries yet, just sleep 1 second
+		effective = time.Now().Local().Add(1 * time.Second)
 	} else {
 		effective = entries[0].NextScheduleTime
 	}
@@ -257,9 +256,10 @@ func (c *Cron) step() bool {
 	case <-time.After(effective.Sub(now)):
 		// reload entries, since the entries might be changed during the wait.
 		entries := c.sortEntries()
+		now := time.Now().Local()
 		for _, e := range entries {
-			// run every entry whose next time was less than effective time.
-			if e.NextScheduleTime.After(effective) {
+			// run every entry whose next time was less than now.
+			if e.NextScheduleTime.After(now) {
 				return true
 			}
 			c.bounceNextScheduleTime(e.Name)
